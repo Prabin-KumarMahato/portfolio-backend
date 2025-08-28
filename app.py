@@ -8,7 +8,7 @@ from flask_cors import CORS
 import boto3
 from botocore.exceptions import ClientError
 
-# Load env variables
+# Load env variables (optional if you use IAM Role)
 load_dotenv()
 
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
@@ -17,7 +17,7 @@ S3_BUCKET = os.getenv("S3_BUCKET", "contact-form-submissions")
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Initialize boto3 client
+# boto3 client: automatically picks IAM Role if running on EC2
 s3 = boto3.client("s3", region_name=AWS_REGION)
 
 
@@ -25,9 +25,11 @@ def ensure_bucket(bucket_name: str) -> bool:
     """Ensure the S3 bucket exists, create if missing (idempotent)."""
     try:
         s3.head_bucket(Bucket=bucket_name)
+        app.logger.info(f"✅ Bucket exists: {bucket_name}")
         return True
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
+        app.logger.warning(f"Bucket check error: {error_code}")
 
         # If bucket doesn't exist → create
         if error_code in ("404", "NoSuchBucket", "403"):
