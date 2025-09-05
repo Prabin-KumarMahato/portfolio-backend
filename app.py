@@ -5,50 +5,26 @@ import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import boto3
-from botocore.exceptions import ClientError
+from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 
-# Load env variables (optional if you use IAM Role)
+# Load env variables
 load_dotenv()
 
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-S3_BUCKET = os.getenv("S3_BUCKET", "contact-form-submissions")
+# MongoDB configuration
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGODB_DB = os.getenv("MONGODB_DB", "portfolio")
+
+if not MONGODB_URI:
+    raise RuntimeError("MONGODB_URI env var is required")
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# boto3 client: automatically picks IAM Role if running on EC2
-s3 = boto3.client("s3", region_name=AWS_REGION)
-
-
-def ensure_bucket(bucket_name: str) -> bool:
-    """Ensure the S3 bucket exists, create if missing (idempotent)."""
-    try:
-        s3.head_bucket(Bucket=bucket_name)
-        app.logger.info(f"✅ Bucket exists: {bucket_name}")
-        return True
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        app.logger.warning(f"Bucket check error: {error_code}")
-
-        # If bucket doesn't exist → create
-        if error_code in ("404", "NoSuchBucket", "403"):
-            try:
-                if AWS_REGION == "us-east-1":  # special case
-                    s3.create_bucket(Bucket=bucket_name)
-                else:
-                    s3.create_bucket(
-                        Bucket=bucket_name,
-                        CreateBucketConfiguration={"LocationConstraint": AWS_REGION},
-                    )
-                app.logger.info(f"✅ Created bucket: {bucket_name}")
-                return True
-            except Exception as create_err:
-                app.logger.error(f"❌ Could not create bucket: {create_err}")
-                return False
-        else:
-            app.logger.error(f"❌ Bucket check failed: {e}")
-            return False
+# Initialize MongoDB client
+client = MongoClient(MONGODB_URI)
+db = client[MONGODB_DB]
+contacts_col = db.get_collection("contact_submissions")
 
 
 @app.post("/api/contact")
@@ -62,13 +38,8 @@ def contact():
         return jsonify({"ok": False, "error": "All fields are required"}), 400
 
     ts = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-    key = (
-        f"contact-form-submissions/"
-        f"{datetime.datetime.utcnow().strftime('%Y/%m/%d')}/"
-        f"{ts}_{uuid.uuid4().hex}.json"
-    )
-
     payload = {
+        "_id": uuid.uuid4().hex,
         "name": name,
         "email": email,
         "message": message,
@@ -76,21 +47,11 @@ def contact():
         "ip": request.remote_addr,
     }
 
-    # Ensure bucket exists before writing
-    if not ensure_bucket(S3_BUCKET):
-        return jsonify({"ok": False, "error": "Could not prepare storage"}), 500
-
     try:
-        s3.put_object(
-            Bucket=S3_BUCKET,
-            Key=key,
-            Body=json.dumps(payload, ensure_ascii=False),
-            ContentType="application/json",
-            ServerSideEncryption="AES256",
-        )
-        return jsonify({"ok": True, "id": key})
-    except Exception as e:
-        app.logger.exception("❌ S3 upload failed")
+        result = contacts_col.insert_one(payload)
+        return jsonify({"ok": True, "id": str(result.inserted_id)})
+    except PyMongoError as e:
+        app.logger.exception("❌ MongoDB insert failed")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
