@@ -5,26 +5,15 @@ import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
-from pymongo.errors import PyMongoError
 
 # Load env variables
 load_dotenv()
 
-# MongoDB configuration
-MONGODB_URI = os.getenv("MONGODB_URI")
-MONGODB_DB = os.getenv("MONGODB_DB", "portfolio")
-
-if not MONGODB_URI:
-    raise RuntimeError("MONGODB_URI env var is required")
-
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# Initialize MongoDB client
-client = MongoClient(MONGODB_URI)
-db = client[MONGODB_DB]
-contacts_col = db.get_collection("contact_submissions")
+# Local submissions file (for dev without DB)
+SUBMISSIONS_FILE = os.path.join(os.path.dirname(__file__), "submissions.jsonl")
 
 
 @app.post("/api/contact")
@@ -48,10 +37,12 @@ def contact():
     }
 
     try:
-        result = contacts_col.insert_one(payload)
-        return jsonify({"ok": True, "id": str(result.inserted_id)})
-    except PyMongoError as e:
-        app.logger.exception("❌ MongoDB insert failed")
+        # append to local JSONL file for development
+        with open(SUBMISSIONS_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        return jsonify({"ok": True, "id": payload["_id"]})
+    except Exception as e:
+        app.logger.exception("❌ Local write failed")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
