@@ -1,0 +1,17 @@
+{
+    "name": "portfolio-backend",
+    "version": "1.0.0",
+    "description": "Backend for my portfolio contact form.",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "author": "Prabin Kumar Mahato",
+    "license": "ISC",
+    "dependencies": {
+        "cors": "^2.8.5",
+        "express": "^4.19.2",
+        "resend": "^3.2.0"
+    }
+}
