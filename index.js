@@ -2,12 +2,15 @@ import express from 'express';
 import cors from 'cors';
 import { Resend } from 'resend';
 
+// Initialize Express app
 const app = express();
+
 // Use your Vercel URL here
 const vercelFrontendUrl = process.env.FRONTEND_URL || "https://prabinmahato.tech";
 
+// Setup CORS to allow requests only from your Vercel frontend
 app.use(cors({ origin: vercelFrontendUrl }));
-app.use(express.json());
+app.use(express.json()); // Middleware to parse JSON bodies
 
 const port = process.env.PORT || 3001;
 
